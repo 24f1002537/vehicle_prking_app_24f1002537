@@ -9,10 +9,13 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             address TEXT,
-            pincode TEXT
+            pincode TEXT,
+            role TEXT DEFAULT 'user',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    
     ''')
+    #c.execute('''INSERT INTO users(username,password,address,pincode,role) VALUES(?,?,?,?,?)''', ('admin', 'admin123', '123 Admin St', '12345', 'admin'))
     conn.commit()
     conn.close()
 
-init_db()
