@@ -1,3 +1,4 @@
+from unittest import result
 from flask import Flask, request
 from flask_restful import Resource, Api
 import sqlite3, os, hashlib
@@ -51,8 +52,62 @@ class Login(Resource):
             return {'error': str(e)}, 500
         return {'error': 'invalid credentials'}, 401
 
+class admin(Resource):
+    def get(self):
+            try:
+                result = {}
+                with sqlite3.connect(DB) as conn:
+                    cur = conn.cursor()
+                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
+                    a = cur.fetchall()
+                    
+
+                    for row in a:
+                        lot_id, maxcapacity, occupied, spot_id = row
+                        if lot_id not in result:
+                            result[lot_id] = {
+                            'id': lot_id,
+                            'maxcapacity': maxcapacity,
+                            'spotdetail': [],
+                            'occupied': 0
+                        }
+                        if occupied:
+                            result[lot_id]['occupied'] += 1  
+                        result[lot_id]['spotdetail'].append({'id': spot_id, 'occupied': occupied})
+                output = list(result.values())
+                return {'message': 'admin dashboard', 'data': output}, 200
+                
+            except sqlite3.Error as e:
+                return {'error': str(e)}, 500
+                
+
+class create(Resource):
+    def get(self):
+        return {'message': 'create parking lot page'}
+    def post(self):
+        data = request.get_json()
+        lot_address, lot_location , pincode,price,maxspots = data.get('address'), data.get('locationName'), data.get('pinCode'), data.get('price'), data.get('maxSpots')
+        if not lot_address or not lot_location:
+            return {'error': 'lot address and location required'}, 400
+        try:
+            with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                cur.execute('INSERT INTO parking_lots(prime_location_name,address,pincode,price,number_of_spots) VALUES(?,?,?,?,?)',
+                            (lot_location, lot_address, pincode, price, maxspots))
+                conn.commit()
+                cur.execute('SELECT id FROM parking_lots WHERE prime_location_name=? AND address=?', (lot_location, lot_address))
+                a = cur.fetchone()
+                for i in range(maxspots):
+                    cur.execute('INSERT INTO parking_spots(parking_lot_id) VALUES(?)', (a[0],))
+                conn.commit()
+            return {'message': 'parking lot created'}, 201
+        except sqlite3.Error as e:
+            return {'error': str(e)}, 500
+    
 api.add_resource(Register, '/api/register')
 api.add_resource(Login,    '/api/login')
+api.add_resource(create,   '/create')
+api.add_resource(admin,    '/admin')
 
 if __name__ == '__main__':
     app.run(debug=True)
