@@ -60,41 +60,7 @@
       </div>
     </el-aside>
     <!-- Page Main -->
-    <div class="dashboard-main">
-      <el-button
-        type="primary"
-        icon="el-icon-plus"
-        class="add-btn"
-        @click="goToAdd"
-      >
-        Add
-      </el-button>
-      <h1>Parking lots</h1>
-      <div class="dashboard-main2" style="display: flex;">
-        
-      <div class="box" style="border: #1a2436 1px solid;width: 30%;margin-right: 10px;border-radius: 8px; justify-items: center;" v-for="parking in dataArray" :key="parking.id">
-    <!-- Display main ID and occupied/maxcapacity -->
-    <div>ID: {{ parking.id }}</div>
-    <div>{{ parking.occupied }}/{{ parking.maxcapacity }}</div>
-    <div class="actions">
-      <el-button type="primary" @click="ditLot(parking.id)">Edit</el-button>
-      <el-button type="danger" @click="deleteLot(parking.id)">Delete</el-button>
-    </div>
-
-    <div style="display: flex; flex-wrap: wrap; margin-top: 10px;">
-      <el-button
-        v-for="spot in parking.spotdetail"
-        :key="spot.id"
-        :style="getBoxStyle(spot.occupied)"
-        class="spot-box"
-        @click="editSpot(spot.id)"
-      >
-        {{ spot.occupied === 1 ? "O" : "A" }}
-      </el-button>
-    </div>
-  </div>
-      </div>
-      </div>
+    
       <!-- Main router view -->
       <router-view />
     </div>
@@ -109,24 +75,8 @@ export default {
   data() {
     return {
       isSidebarOpen: true,
-      dataArray: {}
+      
     }
-  },
-    created() {
-    fetch("http://localhost:5000/admin")
-      .then(response => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch parking lot data.");
-        }
-        return response.json();
-      })
-      .then(data => {
-        console.log(data);
-        this.dataArray = data.data;
-      })
-      .catch(error => {
-        console.error("Fetch error:", error);
-      });
   },
   computed: {
     sidebarWidth() {
@@ -139,36 +89,6 @@ export default {
   methods: {
     toggleSidebar() {
       this.isSidebarOpen = !this.isSidebarOpen;
-    },
-    goToAdd() {
-      this.$router.push('/admin/generatepl');
-    },
-    ditLot(lotId) {
-      alert("Edit lot: " + lotId);
-      this.$router.push({ path: '/admin/slot/edit', query: { lotId: lotId } });
-    },
-    deleteLot(lotId) {
-      alert("Delete lot: " + lotId);
-      this.$router.push({ path: '/admin/slot/delete', query: { lotId: lotId } });
-    },
-    getBoxStyle(occupied) {
-  return {
-    border : '1px solid #ccc',
-    width: '30px',
-    height: '30px',
-    background: occupied ? 'red' : 'green',
-    color: 'white',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    margin: '4px',
-    borderRadius: '4px',
-    fontWeight: 'bold'
-  };
-},
-    editSpot(spotId) {
-      alert("Edit spot: " + spotId);
-      this.$router.push({ path: '/admin/editspot', query: { spotId: spotId } });
     }
   }
 
@@ -176,64 +96,14 @@ export default {
 </script>
 
 <style scoped>
-.dashboard-main2 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 10px;
-  box-sizing: border-box;
-}
-.box {
-  flex: 1 1 calc(30% - 14px); /* Force 3-per-row */
-  border: #1a2436 1px solid;
-  border-radius: 8px;
-  padding: 10px;
-  box-sizing: border-box;
-  min-width: 250px; /* Optional */
-}
+
+
 .AdminDashboard {
   display: flex;
   height: 97vh;
 }
-.dashboard-boxes {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 32px;
-  width: 100%;
-}
-.dashboard-box {
-  background: #585656;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px #0001;
-  height: 150px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 18px;
-}
 
 
-.heading {
-  position: absolute;
-  height: 40px;
-  top: 20px;
-  left: 300px;
-  font-size: 24px;
-  font-weight: bold;
-  color: #2c3e50;
-}
-.dashboard-main {
-  flex: 1;
-  padding: 24px;
-  overflow: auto;
-  position: relative;
-}
-
-.add-btn {
-  margin-bottom: 24px;
-  float: right;
-}
 
 .admin-sidebar {
   height: 100%;
@@ -306,3 +176,4 @@ export default {
   vertical-align: middle;
 }
 </style>
+  
