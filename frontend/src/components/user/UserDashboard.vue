@@ -49,9 +49,90 @@
             <span slot="title" v-if="isSidebarOpen">Logout</span>
           </el-menu-item>
         </el-menu>
+        
       </div>
     </el-aside>
     <!-- Page Main -->
+     <div class="home">
+      <div v-if="occupiedSpots.length > 0" class="divider">
+        Occupied Parking Spots
+        <text class="divider-text"></text>
+        Occupied Parking Spots
+        <text class="divider-text"></text>
+        <table class="parking-table">
+          <thead>
+            <tr>
+              <th>Spot ID</th>
+              <th>Location</th>
+              <th>Vehicle Number</th>
+              <th>Duration</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="spot in occupiedSpots" :key="spot.spotId">
+              <td>{{ spot.spotId }}</td>
+              <td>{{ spot.location }}</td>
+              <td>{{ spot.vehicle_number }}</td>
+              <td>
+                {{ getDuration(spot.occupied_time, spot.release_time) }}
+              </td>
+              <td>
+                <el-button
+                  v-if="spot.status === 'occupied'"
+                  type="danger"
+                  size="mini"
+                  @click="releaseSpot(spot.spotId)"
+                >Release</el-button>
+                <el-button
+                  v-else
+                  type="success"
+                  size="mini"
+                  disabled
+                >Parked Out</el-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div 
+      class="search"
+      :style="{ height: occupiedSpots.length > 0 ? '50%' : '100%' }"
+      >
+    
+        <div>
+    <!-- Search Bar -->
+    <input
+      type="text"
+      v-model="searchQuery"
+      placeholder="Search by address or pincode"
+      class="search-input"
+    />
+
+    <!-- Table Results -->
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Address</th>
+          <th>Availability</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="lot in filteredLots" :key="lot.id">
+          <td>{{ lot.id }}</td>
+          <td>{{ lot.address }}</td>
+          <td>{{ lot.available }}</td>
+          <td>
+            <button @click="bookLot(lot)">Book</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+        </div>
+    </div>
     
       <!-- Main router view -->
       <router-view />
@@ -67,8 +148,31 @@ export default {
   data() {
     return {
       isSidebarOpen: true,
-      
+      occupiedSpots: [],
+      parkingLots: [],
+      searchQuery: '',
     }
+  },
+  created() {
+    const token = localStorage.getItem('access_token');
+    fetch("http://localhost:5000/api/user/occupied-spots", {
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch occupied spots.");
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log(data.data);
+        this.parkingLots = data.data;
+      })
+      .catch(error => {
+        console.error("Fetch error:", error);
+      });
   },
   computed: {
     sidebarWidth() {
@@ -76,7 +180,17 @@ export default {
     },
     activeMenu() {
       return this.$route.path;
-    }
+    },
+    filteredLots() {
+    const query = this.searchQuery.trim().toLowerCase();
+    if (!query) return this.parkingLots;
+
+    return this.parkingLots.filter(lot => {
+      const addressMatch = lot.address?.toLowerCase().includes(query);
+      const pincodeMatch = lot.pincode?.toString().includes(query);
+      return addressMatch || pincodeMatch;
+    });
+  }
   },
   methods: {
     toggleSidebar() {
@@ -85,15 +199,136 @@ export default {
     logout() {
       localStorage.removeItem('access_token');
       this.$router.push('/');
-    }
+    },
+    getDuration(start, end) {
+      const startTime = new Date(start);
+      const endTime = new Date(end);
+      const diffMs = endTime - startTime;
+      const diffMins = Math.floor(diffMs / 60000);
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      return `${hours}h ${mins}m`;
+    },
+    releaseSpot(spotId) {
+      // Implement release logic here
+      alert(`Release spot ${spotId}`);
+      // Example: update status locally
+      const spot = this.occupiedSpots.find(s => s.spotId === spotId);
+      if (spot) spot.status = "released";
+    },
+    async fetchOccupiedSpots() {
+      const token = localStorage.getItem('access_token');
+      const email = this.$route.query.email;
+      try {
+        const response = await fetch(`http://localhost:5000/api/user/occupied-spots/${email}`, {
+          headers: {
+            'Authorization': 'Bearer ' + token
+          }
+        });
+        if (!response.ok) throw new Error('Failed to fetch occupied spots');
+        const data = await response.json();
+        // Adjust mapping if backend keys differ
+        this.occupiedSpots = data.spots.map(spot => ({
+          spotId: spot.spot_id,
+          location: spot.location,
+          vehicle_number: spot.vehicle_number,
+          occupied_time: spot.occupied_time,
+          release_time: spot.release_time,
+          status: spot.status
+        }));
+      } catch (err) {
+        console.error(err);
+      }
+    },bookLot(lot) {
+  const email = this.$route.query.email;
+  if (!lot.spotid) {
+    alert("Error: No spotid found for this lot.");
+    return;
   }
 
+  this.$router.push({
+    path: '/user/book',
+    query: {
+      email,
+      id: lot.spotid
+    }
+  });
+}
+  },
+  mounted() {
+    this.fetchOccupiedSpots();
+  }
 }
 </script>
 
 <style scoped>
-
-
+.search-input {
+  margin-bottom: 1em;
+  padding: 0.5em 1em;
+  width: 80%;
+  font-size: 1.1em;
+}
+.results-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.results-table th, .results-table td {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+.results-table th {
+  background: #eef3fd;
+}
+.results-table tr:hover {
+  background-color: #f4f4f8;
+}
+button {
+  background: #399efd;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+button:hover {
+  background: #2978c2;
+}
+.divider-text {
+  font-size: 24px;
+  color: #000000;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.home {
+  width: 100%;
+  height: 100%;
+}
+.search {
+  width: 100%;
+  height: 50%;
+  background-color: #caeffffb;
+  display: flex;
+  justify-content: center;
+  font-size: 24px;
+  color: #776060c8;
+  border-top: #1a2436 1px solid;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+.divider {
+  height: 50%;
+  background-color: #5350506a;
+  width: 100%;
+  border-bottom-left-radius: 20px;
+  border-bottom-right-radius: 20px;
+  color: #2a3d4b;
+  font-size: 24px;
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+  border-bottom: #1a2436 1px solid;
+}
 .UserDashboard {
   display: flex;
   height: 97vh;
@@ -171,5 +406,28 @@ export default {
   margin-right: 10px;
   vertical-align: middle;
 }
+
+.parking-table {
+  height: 40%;
+  width: 80%;
+  border-collapse: collapse;
+  margin: 0 auto;
+  background: #efbbbb;
+}
+
+.parking-table th,
+.parking-table td {
+  border: 1px solid #181818;
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.parking-table th {
+  background: #223047;
+  color: #fff;
+}
+
+.parking-table td {
+  font-size: 16px;
+}
 </style>
-  

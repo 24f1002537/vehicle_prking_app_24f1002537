@@ -21,6 +21,10 @@
 
     <div v-else>
       <div class="field">
+        <label>Full name</label>
+        <input v-model="reg.full_name" type="text" />
+      </div>
+      <div class="field">
         <label>Email</label>
         <input v-model="reg.email" type="email" />
       </div>
@@ -63,7 +67,8 @@ export default {
         email: '',
         password: '',
         address: '',
-        pincode: ''
+        pincode: '',
+        full_name: ''  // Added full_name for registration
       }
     }
   },
@@ -97,7 +102,7 @@ export default {
           if (data.role === 'admin') {
             this.$router.push('/admin')
           } else if (data.role === 'user') {
-            this.$router.push('/user')
+            this.$router.push({ path: '/user' , query: { email: this.login.email } })
           } else {
             this.error = 'Unknown role.'
           }
@@ -114,7 +119,8 @@ export default {
         !this.reg.email ||
         !this.reg.password ||
         !this.reg.address ||
-        !this.reg.pincode
+        !this.reg.pincode ||
+        !this.reg.full_name
       ) {
         this.error = 'Please fill all registration fields.'
         return
@@ -127,7 +133,8 @@ export default {
             username: this.reg.email,
             password: this.reg.password,
             address: this.reg.address,
-            pincode: this.reg.pincode
+            pincode: this.reg.pincode,
+            full_name: this.reg.full_name
           })
         })
         const data = await response.json()

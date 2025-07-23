@@ -10,6 +10,7 @@ import ADsummarry from './components/ADsummarry.vue'
 import ADpedit from './components/ADpedit.vue'
 import edit from './components/Adminedit.vue'
 import Admineditspot from './components/Admineditspot.vue'
+import userbook from './components/user/Userbook.vue'
 
 
 Vue.use(VueRouter)
@@ -24,7 +25,8 @@ const routes = [
   { path: '/admin/search', component: ADsearch },
   { path: '/admin/sumary', component: ADsummarry },
   { path: '/admin/edit', component: ADpedit },
-  { path: '/admin/slot/edit', component: edit }
+  { path: '/admin/slot/edit', component: edit },
+  { path: '/user/book', component: userbook }
 ]
 
 const router = new VueRouter({

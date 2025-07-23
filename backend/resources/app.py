@@ -1,6 +1,6 @@
 from unittest import result
 from flask import Flask, request
-from flask_restful import Resource, Api
+from flask_restful import Resource, Api, reqparse
 import sqlite3, os, hashlib
 from flask_cors import CORS
 import sys
@@ -29,13 +29,14 @@ class Register(Resource):
         data = request.get_json()
         email, pw = data.get('username'), data.get('password')
         addr, pin = data.get('address'), data.get('pincode')
+        full_name = data.get('full_name', '')  # Optional full name
         if not email or not pw:
             return {'error': 'email and password required'}, 400
         try:    
             with sqlite3.connect(DB) as conn:
                 cur = conn.cursor()
-                cur.execute('INSERT INTO users(username,password,address,pincode) VALUES(?,?,?,?)',
-                            (email, pw, addr, pin))
+                cur.execute('INSERT INTO users(username,password,address,pincode,full_name) VALUES(?,?,?,?,?)',
+                            (email, pw, addr, pin, full_name))
                 conn.commit()
             return {'message': 'registered'}, 201
         except sqlite3.IntegrityError:
@@ -76,18 +77,21 @@ class admin(Resource):
                 result = {}
                 with sqlite3.connect(DB) as conn:
                     cur = conn.cursor()
-                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
+                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode, parking_lots.price FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
                     a = cur.fetchall()
                     
 
                     for row in a:
-                        lot_id, maxcapacity, occupied, spot_id = row
+                        lot_id, maxcapacity, occupied, spot_id, address, pincode, price = row
                         if lot_id not in result:
                             result[lot_id] = {
                             'id': lot_id,
                             'maxcapacity': maxcapacity,
                             'spotdetail': [],
-                            'occupied': 0
+                            'occupied': 0,
+                            'address': address,
+                            'pincode': pincode,
+                            'price': price
                         }
                         if occupied:
                             result[lot_id]['occupied'] += 1  
@@ -214,7 +218,7 @@ class spotdetail(Resource):
                 if not spots:
                     return {'error': 'No spots found for this lot'}, 404
                 if spots[0][0] == 1:
-                    cur.execute('SELECT customer_id, vehicle_number,reserved_at,leave_at FROM parking_spots WHERE id=?', (lot_id,))
+                    cur.execute('SELECT user_id, vehicle_number,reserved_at,leave_at FROM reserved_parking_spots WHERE parking_spot_id=?', (lot_id,))
                     reserved_info = cur.fetchone()
                     cur.execute('SELECT price FROM parking_lots WHERE id=?', (spots[0][1],))
                     lot = cur.fetchone()
@@ -224,12 +228,13 @@ class spotdetail(Resource):
                             'status': 'O',
                             'customer_id': reserved_info[0],
                             'vehicle_number': reserved_info[1],
-                            'reservedAt': reserved_info[2],
-                            'leaveAt': reserved_info[3],
+                            'reserved_at': reserved_info[2],
+                            'leave_at': reserved_info[3],
                             'cost': lot[0]
                         }, 200
                 return {'id': lot_id, 'status': 'A'}, 200
         except sqlite3.Error as e:
+            print("Error fetching spot details:", e)
             return {'error': str(e)}, 500
     @jwt_required()
     def delete(self, lot_id):
@@ -249,7 +254,95 @@ class spotdetail(Resource):
         except sqlite3.Error as e:
             return {'error': str(e)}, 500   
 
+class OccupiedSpots(Resource):
+    @jwt_required()
+    def get(self,email):
+        try:
+            with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                # Get all occupied spots with details
+                cur.execute('SELECT id FROM users WHERE username=?', (email,))
+                user = cur.fetchone()
+                cur.execute('''
+                    SELECT parking_spot_id, vehicle_number, reserved_at, leave_at FROM reserved_parking_spots WHERE user_id = ?
+                ''', (user[0],))
+                rows = cur.fetchall()
+                
+                spots = []
+                for row in rows:
+                    spot_id, vehicle_number, occupied_time, release_time = row
+                    spots.append({
+                        'spot_id': spot_id,
+                        'location': location,
+                        'vehicle_number': vehicle_number,
+                        'occupied_time': occupied_time,
+                        'release_time': release_time,
+                        'status': 'occupied'
+                    })
+                return {'spots': spots}, 200
+        except sqlite3.Error as e:
+            return {'error': str(e)}, 500
+class notoccupied(Resource):
+    @jwt_required()
+    def get(self):
+            try:
+                result = {}
+                with sqlite3.connect(DB) as conn:
+                    cur = conn.cursor()
+                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
+                    a = cur.fetchall()
+                    
 
+                    for row in a:
+                        lot_id, maxcapacity, occupied, spot_id, address, pincode = row
+                        if lot_id not in result:
+                            result[lot_id] = {
+                            'id': lot_id,
+                            'spotid': 0,
+                            'available': maxcapacity,
+                            'address': address,
+                            'pincode': pincode,
+                        }
+                        if occupied:
+                            result[lot_id]['available'] -= 1
+                        else:
+                            result[lot_id]['spotid'] = spot_id
+                output = list(result.values())
+                return {'message': 'user dashboard', 'data': output}, 200
+            except sqlite3.Error as e:
+                return {'error': str(e)}, 500
+
+class userbook(Resource):
+    def get(self,email,spotid):
+        try:
+            with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT id FROM users WHERE username=?',(email,))
+                user=cur.fetchone()
+                cur.execute('SELECT parking_lot_id FROM parking_spots WHERE id=? ',(spotid,))
+                spot=cur.fetchone()
+                return {'userid': user[0],'lotid':spot[0],'spotid':spotid}, 200
+        except sqlite3.Error as e:
+                return {'error': str(e)}, 500
+    def put(self):
+        data = request.get_json()
+        spotid = data.get('spotid')
+        userid = data.get('userid')
+        vehicle_number = data.get('vehicle_number')
+        try:
+          with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                cur.execute('INSERT INTO reserved_parking_spots(parking_spot_id, user_id, vehicle_number) VALUES(?,?,?)', (spotid, userid, vehicle_number))
+                cur.execute('UPDATE parking_spots SET is_occupied=1 WHERE id=?', (spotid,))
+                conn.commit()
+                return {'message': 'Spot booked successfully'}, 200
+        except sqlite3.Error as e:
+                return {'error': str(e)}, 500  
+
+# Add this resource to your API
+api.add_resource(OccupiedSpots, '/api/occupied-spots/<string:email>')
+api.add_resource(notoccupied, '/api/user/occupied-spots')
+api.add_resource(userbook, '/api/user/book/<string:email>/<int:spotid>', '/api/user/book')
 api.add_resource(Register, '/api/register')
 api.add_resource(Login,    '/api/login')
 api.add_resource(create,   '/create')

@@ -19,7 +19,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="submitForm">Add</el-button>
-        <el-button @click="resetForm">Cancel</el-button>
+        <el-button @click="resetForm">Home</el-button>
       </el-form-item>
     </el-form>
 <div class="error" v-if="error">{{ error }}</div>
@@ -84,7 +84,7 @@ export default {
       
     },
     resetForm() {
-      this.$refs.formRef.resetFields();
+      this.$router.push('/admin')
     }
   }
 }
