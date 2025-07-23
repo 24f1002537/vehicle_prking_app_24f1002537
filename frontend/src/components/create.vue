@@ -44,16 +44,24 @@ export default {
     }
   },
   methods: {
+    
     async submitForm() {
-        this.error = ''
-        if (!this.form.locationName || !this.form.address || !this.form.pinCode || !this.form.price || !this.form.maxSpots) {
-            this.error = 'All fields are required';
-            return
+      this.error = ''
+      if (!this.form.locationName || !this.form.address || !this.form.pinCode || !this.form.price || !this.form.maxSpots) {
+        this.error = 'All fields are required';
+        return
+      }
+      try {
+        const token = localStorage.getItem('access_token');
+        if(token) {
+          console.log("Token found:", token);
         }
-        try {
         const response = await fetch('http://localhost:5000/create', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
           body: JSON.stringify({
             locationName: this.form.locationName,
             address: this.form.address,

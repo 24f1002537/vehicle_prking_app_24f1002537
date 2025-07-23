@@ -52,7 +52,7 @@
             <i class="el-icon-edit"></i>
             <span slot="title" v-if="isSidebarOpen">Edit Profile</span>
           </el-menu-item>
-          <el-menu-item index="/logout">
+          <el-menu-item index="/logout" @click="logout">
             <i class="el-icon-switch-button"></i>
             <span slot="title" v-if="isSidebarOpen">Logout</span>
           </el-menu-item>
@@ -113,21 +113,26 @@ export default {
     }
   },
     created() {
-    fetch("http://localhost:5000/admin")
-      .then(response => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch parking lot data.");
-        }
-        return response.json();
-      })
-      .then(data => {
-        console.log(data);
-        this.dataArray = data.data;
-      })
-      .catch(error => {
-        console.error("Fetch error:", error);
-      });
-  },
+  const token = localStorage.getItem('access_token');
+  fetch("http://localhost:5000/admin", {
+    headers: {
+      'Authorization': 'Bearer ' + token
+    }
+  })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Failed to fetch parking lot data.");
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log(data);
+      this.dataArray = data.data;
+    })
+    .catch(error => {
+      console.error("Fetch error:", error);
+    });
+},
   computed: {
     sidebarWidth() {
       return this.isSidebarOpen ? 280 : 80;
@@ -149,7 +154,25 @@ export default {
     },
     deleteLot(lotId) {
       alert("Delete lot: " + lotId);
-      this.$router.push({ path: '/admin/slot/delete', query: { lotId: lotId } });
+      const token = localStorage.getItem('access_token');
+      fetch("http://localhost:5000/delete/lot/" + lotId, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Bearer ' + token
+        }
+      }).then(async response => {
+        const data = await response.json();
+        if (response.ok) {
+          this.dataArray = this.dataArray.filter(lot => lot.id !== lotId);
+          alert(data.message); // "parking lot deleted"
+        } else {
+          throw new Error(data.error || "Unknown error");
+        }
+      })
+      .catch(error => {
+        console.error("ERROR deleting parking lot:", error.message);
+        alert("Failed to delete parking lot");
+      });
     },
     getBoxStyle(occupied) {
   return {
@@ -169,9 +192,12 @@ export default {
     editSpot(spotId) {
       alert("Edit spot: " + spotId);
       this.$router.push({ path: '/admin/editspot', query: { spotId: spotId } });
+    },
+    logout() {
+      localStorage.removeItem('access_token');
+      this.$router.push('/');
     }
   }
-
 }
 </script>
 

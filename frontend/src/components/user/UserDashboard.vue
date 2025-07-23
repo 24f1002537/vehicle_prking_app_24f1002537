@@ -1,5 +1,5 @@
 <template>
-  <div class="AdminDashboard">
+  <div class="UserDashboard">
     <!-- Sidebar -->
     <el-aside
       :style="{ width: sidebarWidth + 'px', transition: 'width 0.3s cubic-bezier(.4,0,.2,1)' }"
@@ -10,7 +10,7 @@
       </button>
       <div class="sidebar-header" v-show="isSidebarOpen">
         <el-avatar icon="el-icon-user-solid" size="large" />
-        <div class="welcome-text">Welcome Admin</div>
+        <div class="welcome-text">Welcome user</div>
       </div>
 
       <!-- Main navigation menu -->
@@ -22,19 +22,11 @@
         text-color="#fff"
         active-text-color="#ffd04b"
       >
-        <el-menu-item index="/admin">
+        <el-menu-item index="/user">
           <i class="el-icon-house"></i>
           <span slot="title" v-if="isSidebarOpen">Home</span>
         </el-menu-item>
-        <el-menu-item index="/admin/user">
-          <i class="el-icon-user"></i>
-          <span slot="title" v-if="isSidebarOpen">User</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/search">
-          <i class="el-icon-search"></i>
-          <span slot="title" v-if="isSidebarOpen">Search</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/sumary">
+        <el-menu-item index="/user/summary">
           <i class="el-icon-data-analysis"></i>
           <span slot="title" v-if="isSidebarOpen">Summary</span>
         </el-menu-item>
@@ -52,10 +44,10 @@
             <i class="el-icon-edit"></i>
             <span slot="title" v-if="isSidebarOpen">Edit Profile</span>
           </el-menu-item>
-          <el-menu-item  @click="logout">
-  <i class="el-icon-switch-button"></i>
-  <span slot="title" v-if="isSidebarOpen">Logout</span>
-</el-menu-item>
+          <el-menu-item index="/logout" @click="logout">
+            <i class="el-icon-switch-button"></i>
+            <span slot="title" v-if="isSidebarOpen">Logout</span>
+          </el-menu-item>
         </el-menu>
       </div>
     </el-aside>
@@ -102,7 +94,7 @@ export default {
 <style scoped>
 
 
-.AdminDashboard {
+.UserDashboard {
   display: flex;
   height: 97vh;
 }

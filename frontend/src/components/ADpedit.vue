@@ -52,7 +52,7 @@
             <i class="el-icon-edit"></i>
             <span slot="title" v-if="isSidebarOpen">Edit Profile</span>
           </el-menu-item>
-          <el-menu-item index="/logout">
+          <el-menu-item  @click="logout">
             <i class="el-icon-switch-button"></i>
             <span slot="title" v-if="isSidebarOpen">Logout</span>
           </el-menu-item>
@@ -89,9 +89,12 @@ export default {
   methods: {
     toggleSidebar() {
       this.isSidebarOpen = !this.isSidebarOpen;
+    },
+    logout() {
+      localStorage.removeItem('access_token');
+      this.$router.push('/');
     }
   }
-
 }
 </script>
 
@@ -176,4 +179,3 @@ export default {
   vertical-align: middle;
 }
 </style>
-  

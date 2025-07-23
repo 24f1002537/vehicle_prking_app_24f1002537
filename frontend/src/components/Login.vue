@@ -89,6 +89,10 @@ export default {
         })
         const data = await response.json()
         if (response.ok) {
+          // Store JWT access token
+          if (data.access_token) {
+            localStorage.setItem('access_token', data.access_token)
+          }
           // Route based on role
           if (data.role === 'admin') {
             this.$router.push('/admin')
