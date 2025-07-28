@@ -90,7 +90,7 @@ export default {
         })
         .then(data => {
           alert(data.message);
-            this.$router.push('/user');
+            this.$router.push({path: '/user', query: { email: this.$route.query.email }});
         })
         .catch(error => {
           console.error("Fetch error:", error);

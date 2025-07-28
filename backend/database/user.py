@@ -32,18 +32,22 @@ def init_db():
               is_occupied BOOLEAN DEFAULT FALSE,
               FOREIGN KEY (parking_lot_id) REFERENCES parking_lots (id)
               )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS reserved_parking_spots (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              parking_spot_id INTEGER NOT NULL,
-              user_id INTEGER NOT NULL,
-              reserved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              leave_at TIMESTAMP,
-              FOREIGN KEY (parking_spot_id) REFERENCES parking_spots (id),
-              FOREIGN KEY (user_id) REFERENCES users (id)
-              )''')
+    c.execute('''
+CREATE TABLE IF NOT EXISTS reserved_parking_spots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parking_spot_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    reserved_at TIMESTAMP ,
+    leave_at TIMESTAMP,
+    FOREIGN KEY (parking_spot_id) REFERENCES parking_spots (id),
+    FOREIGN KEY (user_id) REFERENCES users (id)
+)
+''')
+
     c.execute("PRAGMA table_info(reserved_parking_spots)")
     columns_info = c.fetchall()
     column_names = [col[1] for col in columns_info]
+    
 
 
 # Check if column already exists

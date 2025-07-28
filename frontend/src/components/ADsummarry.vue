@@ -60,7 +60,16 @@
       </div>
     </el-aside>
     <!-- Page Main -->
-    
+    <div class="admin-chart">
+  <div style="flex:1; min-width:320px; background:#fff; border-radius:8px; margin:12px; padding:16px;">
+    <h2>User Detail Distribution (Pie Chart)</h2>
+    <pie-chart :chart-data="userChartData" :options="pieOptions" :key="JSON.stringify(userChartData)" />
+  </div>
+  <div style="flex:1; min-width:320px; background:#fff; border-radius:8px; margin:12px; padding:16px;">
+    <h2>Spot Detail Distribution (Bar Chart)</h2>
+    <bar-chart :chart-data="spotChartData" :options="barOptions" :key="JSON.stringify(spotChartData)" />
+  </div>
+</div>
       <!-- Main router view -->
       <router-view />
     </div>
@@ -70,12 +79,62 @@
 
 
 <script>
+import { Pie, Bar } from 'vue-chartjs';
 
+const makeUserChartData = (user_detail) => ({
+  labels: Object.keys(user_detail).map(id => `User ${id}`),
+  datasets: [
+    {
+      backgroundColor: ['#42b983', '#ffa726', '#f44336', '#7e57c2', '#26c6da'],
+      data: Object.values(user_detail)
+    }
+  ]
+});
+
+const makeSpotChartData = (spot_detail) => ({
+  labels: Object.keys(spot_detail).map(id => `Spot ${id}`),
+  datasets: [
+    {
+      label: 'Spot Detail',
+      backgroundColor: '#ffa726',
+      data: Object.values(spot_detail)
+    }
+  ]
+});
 export default {
+  components: {
+    'pie-chart': {
+      extends: Pie,
+      props: ['chartData', 'options'],
+      mounted() {
+        this.renderChart(this.chartData, this.options);
+      }
+    },
+    'bar-chart': {
+      extends: Bar,
+      props: ['chartData', 'options'],
+      mounted() {
+        this.renderChart(this.chartData, this.options);
+      }
+    }
+  },
   data() {
     return {
       isSidebarOpen: true,
-      
+      summaryObj: {
+        user_detail: {  },
+        spot_detail: {  }
+      },
+       pieOptions: {
+        responsive: true,
+        legend: { position: 'bottom' }
+      },
+      barOptions: {
+        responsive: true,
+        scales: {
+          yAxes: [{ ticks: { beginAtZero: true, max: 1 } }]
+        }
+      }
     }
   },
   computed: {
@@ -84,8 +143,17 @@ export default {
     },
     activeMenu() {
       return this.$route.path;
+    },
+    userChartData() {
+      return makeUserChartData(this.summaryObj.user_detail);
+    },
+    spotChartData() {
+      return makeSpotChartData(this.summaryObj.spot_detail);
     }
   },
+  mounted() {
+  this.fetchSummary();
+},
   methods: {
     toggleSidebar() {
       this.isSidebarOpen = !this.isSidebarOpen;
@@ -93,14 +161,40 @@ export default {
     logout() {
       localStorage.removeItem('access_token');
       this.$router.push('/');
+    },
+    async fetchSummary() {
+    const token = localStorage.getItem('access_token');
+    try {
+      const response = await fetch('http://localhost:5000/api/admin/summary', {
+        headers: {
+          'Authorization': 'Bearer ' + token
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch summary');
+      const data = await response.json();
+      // Adjust this mapping if your backend returns different keys
+      this.$set(this.summaryObj, 'user_detail', data.user_detail);
+      this.$set(this.summaryObj, 'spot_detail', data.spot_detail);
+    } catch (err) {
+      console.error("Summary fetch error:", err);
     }
+  }
   }
 
 }
 </script>
 
 <style scoped>
-
+.admin-chart {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 20px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin: 20px;
+  justify-content: center;
+}
 
 .AdminDashboard {
   display: flex;

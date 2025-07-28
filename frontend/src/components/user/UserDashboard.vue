@@ -22,11 +22,11 @@
         text-color="#fff"
         active-text-color="#ffd04b"
       >
-        <el-menu-item index="/user">
+        <el-menu-item @click="goHome">
           <i class="el-icon-house"></i>
           <span slot="title" v-if="isSidebarOpen">Home</span>
         </el-menu-item>
-        <el-menu-item index="/user/summary">
+        <el-menu-item @click="gotosumup">
           <i class="el-icon-data-analysis"></i>
           <span slot="title" v-if="isSidebarOpen">Summary</span>
         </el-menu-item>
@@ -40,7 +40,7 @@
           text-color="#fff"
           active-text-color="#ffd04b"
         >
-          <el-menu-item index="/admin/edit">
+          <el-menu-item @click="gotoedit">
             <i class="el-icon-edit"></i>
             <span slot="title" v-if="isSidebarOpen">Edit Profile</span>
           </el-menu-item>
@@ -70,19 +70,22 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="spot in occupiedSpots" :key="spot.spotId">
-              <td>{{ spot.spotId }}</td>
-              <td>{{ spot.location }}</td>
+            <tr v-for="spot in occupiedSpots" :key="spot.spot_id">
+              <td>{{ spot.spot_id }}</td>
+              <td>{{ spot.address }}</td>
               <td>{{ spot.vehicle_number }}</td>
-              <td>
+              <td v-if="spot.occupied_time && spot.release_time">
                 {{ getDuration(spot.occupied_time, spot.release_time) }}
+              </td>
+              <td v-else>
+                {{ spot.occupied_time ? 'Ongoing' : 'N/A' }}
               </td>
               <td>
                 <el-button
                   v-if="spot.status === 'occupied'"
                   type="danger"
                   size="mini"
-                  @click="releaseSpot(spot.spotId)"
+                  @click="releaseSpot(spot.spot_id)"
                 >Release</el-button>
                 <el-button
                   v-else
@@ -94,7 +97,7 @@
             </tr>
           </tbody>
         </table>
-      </div>
+      </div>  
       <div 
       class="search"
       :style="{ height: occupiedSpots.length > 0 ? '50%' : '100%' }"
@@ -193,6 +196,23 @@ export default {
   }
   },
   methods: {
+    async fetchOccupiedSpots() {
+    const token = localStorage.getItem('access_token');
+    const email = this.$route.query.email;
+    try {
+      const response = await fetch(`http://localhost:5000/api/user/Coccupied-spots/${email}`, {
+        headers: {
+          'Authorization': 'Bearer ' + token
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch occupied spots');
+      const data = await response.json();
+      // Directly assign the array if backend returns {spots: [...]}
+      this.occupiedSpots = data.spots;
+    } catch (err) {
+      console.error(err);
+    }
+  },
     toggleSidebar() {
       this.isSidebarOpen = !this.isSidebarOpen;
     },
@@ -209,37 +229,23 @@ export default {
       const mins = diffMins % 60;
       return `${hours}h ${mins}m`;
     },
+    goHome() {
+    const email = this.$route.query.email;
+    this.$router.push({ path: '/user', query: { email } });
+  },
+  gotosumup(){
+    const email = this.$route.query.email;
+    this.$router.push({ path: '/user/summary', query: { email } });
+  },
+  gotoedit(){
+    const email = this.$route.query.email;
+    this.$router.push({ path: '/user/edit', query: { email } });
+  },
     releaseSpot(spotId) {
       // Implement release logic here
-      alert(`Release spot ${spotId}`);
-      // Example: update status locally
-      const spot = this.occupiedSpots.find(s => s.spotId === spotId);
-      if (spot) spot.status = "released";
+      this.$router.push({ path: '/user/release', query: { spotId } });
     },
-    async fetchOccupiedSpots() {
-      const token = localStorage.getItem('access_token');
-      const email = this.$route.query.email;
-      try {
-        const response = await fetch(`http://localhost:5000/api/user/occupied-spots/${email}`, {
-          headers: {
-            'Authorization': 'Bearer ' + token
-          }
-        });
-        if (!response.ok) throw new Error('Failed to fetch occupied spots');
-        const data = await response.json();
-        // Adjust mapping if backend keys differ
-        this.occupiedSpots = data.spots.map(spot => ({
-          spotId: spot.spot_id,
-          location: spot.location,
-          vehicle_number: spot.vehicle_number,
-          occupied_time: spot.occupied_time,
-          release_time: spot.release_time,
-          status: spot.status
-        }));
-      } catch (err) {
-        console.error(err);
-      }
-    },bookLot(lot) {
+    bookLot(lot) {
   const email = this.$route.query.email;
   if (!lot.spotid) {
     alert("Error: No spotid found for this lot.");
