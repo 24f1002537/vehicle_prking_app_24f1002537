@@ -80,6 +80,7 @@
         <el-alert v-if="!chartData && !isLoading" title="No revenue data found for the selected period." type="warning" center show-icon :closable="false"></el-alert>
       </div>
     </el-main>
+    <button @click="lookupAndGenerate" class="sumbutton">summary</button>
   </div>
 </template>
 
@@ -121,6 +122,8 @@ export default {
   },
   data() {
     return {
+      message: '',
+    success: false,
       isSidebarOpen: true,
       isLoading: true,
       error: null,
@@ -289,12 +292,55 @@ export default {
       const date = new Date();
       date.setMonth(parseInt(monthNumber, 10) - 1);
       return date.toLocaleString('en-US', { month: 'short' }); // Using short month name
+    },
+    async lookupAndGenerate() {
+  this.message = '';
+  const token = localStorage.getItem('access_token'); // FIXED token key
+  const email = this.$route.query.email;
+
+  try {
+    const userRes = await fetch(`http://localhost:5000/api/user/lookup/${email}`);
+    const userData = await userRes.json();
+
+    if (!userRes.ok || !userData.user_id) {
+      throw new Error(userData.error || 'User lookup failed.');
     }
+
+    const userId = userData.user_id;
+
+    const reportRes = await fetch(
+      `http://localhost:5000/api/user/report/${email}/${userId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`, // use correct token
+        },
+      }
+    );
+
+    const reportData = await reportRes.json();
+
+    if (!reportRes.ok) {
+      throw new Error(reportData.error || 'Failed to trigger report generation.');
+    }
+
+    this.message = reportData.message;
+    this.success = true;
+    this.$message({ type: 'success', message: 'Report generation triggered!' });
+  } catch (err) {
+    this.message = err.message;
+    this.success = false;
+    this.$message({ type: 'error', message: this.message });
+  }
+}
+
   },
   created() {
     this.fetchRevenueData();
   }
 };
+
 </script>
 
 <style scoped>
@@ -303,6 +349,18 @@ export default {
   box-sizing: border-box;
 }
 
+.sumbutton {
+  position: absolute;
+  
+  right: 20px;
+  padding: 10px 20px;
+  background-color: #409eff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+}
 .UserDashboard {
   display: flex;
   height: 97vh; /* Matched from UserDashboard.vue */

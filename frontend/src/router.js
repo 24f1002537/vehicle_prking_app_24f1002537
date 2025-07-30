@@ -13,6 +13,7 @@ import Admineditspot from './components/Admineditspot.vue'
 import userbook from './components/user/Userbook.vue'
 import Userrelease from './components/user/Userrelease.vue'
 import usersum from './components/user/Usersum.vue'
+import Useredit from './components/user/useredit.vue'
 
 Vue.use(VueRouter)
 
@@ -29,7 +30,8 @@ const routes = [
   { path: '/admin/slot/edit', component: edit },
   { path: '/user/book', component: userbook },
   { path: '/user/release', component: Userrelease },
-  { path: '/user/summary', component:usersum}
+  { path: '/user/summary', component:usersum},
+  { path: '/user/edit', component: Useredit }
 ]
 
 const router = new VueRouter({

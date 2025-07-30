@@ -1,220 +1,51 @@
-from flask import Flask, request, jsonify, render_template
-from flask_restful import Resource, Api
-import sqlite3
-import os
+from unittest import result
+from flask import Flask, request,jsonify
+from flask_restful import Resource, Api, reqparse
+import sqlite3, os, hashlib
 from flask_cors import CORS
 import sys
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from datetime import datetime, timedelta
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required, get_jwt_identity
+)
+from datetime import timedelta,datetime
 from collections import defaultdict
-import csv
-from celery import Celery
-from celery.schedules import crontab
-from flask_mail import Mail, Message
-from flask_caching import Cache
-import requests # For Google Chat Webhooks
+import redis
+import json
+from resources import PincodeSubmit
+from resources import UserCSVReport  # Make sure it's imported
+from resources import UserIdLookup
 
-# --- Initial Setup ---
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'database')))
 from user import init_db
 
 DB = 'user.db'
-
-# --- App Initialization ---
+# ---------- Flask app ----------
 app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = 'your-secret-key'
 
-# --- Configuration ---
-app.config['JWT_SECRET_KEY'] = 'your-super-secret-key-change-me'
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
-app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
-app.config['MAIL_SERVER'] = 'smtp.googlemail.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME') # Use environment variables
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD') # Use environment variables
-app.config['CACHE_TYPE'] = 'SimpleCache'
-app.config['CACHE_DEFAULT_TIMEOUT'] = 300
 
-# --- Extensions Initialization ---
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)  # 1 hour, adjust as needed
 CORS(app, supports_credentials=True)
 api = Api(app)
 jwt = JWTManager(app)
-mail = Mail(app)
-cache = Cache(app)
 init_db()
 
-# --- Celery Integration ---
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
-celery.conf.update(app.config)
-# --- Database Connection ---
+# Redis connection
+redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+
 def get_db_connection():
-    conn = sqlite3.connect(DB)
+    """Creates a database connection."""
+    # This script expects 'user.db' to be in the same directory.
+    conn = sqlite3.connect('user.db')
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- Celery Tasks ---
-@celery.task
-def send_daily_reminders():
-    """
-    Sends daily reminders to users who have not booked a spot recently.
-    """
-    with app.app_context():
-        conn = get_db_connection()
-        # Find users who haven't booked in the last 7 days
-        users_to_remind = conn.execute("""
-            SELECT u.username, u.id FROM users u
-            WHERE u.role = 'user' AND u.id NOT IN (
-                SELECT DISTINCT user_id FROM reserved_parking_spots
-                WHERE reserved_at >= date('now', '-7 days')
-            )
-        """).fetchall()
-        conn.close()
-
-        for user in users_to_remind:
-            # This is a placeholder for sending a message.
-            # You would integrate Google Chat, SMS, or Email here.
-            print(f"Sending reminder to {user['username']}")
-            # Example for Google Chat Webhook
-            # webhook_url = "YOUR_GOOGLE_CHAT_WEBHOOK_URL"
-            # message = {"text": "Don't forget to book your parking spot if you need one!"}
-            # requests.post(webhook_url, json=message)
-
-
-@celery.task
-def send_monthly_report_email(user_id):
-    """
-    Generates and sends a monthly activity report to a user.
-    """
-    with app.app_context():
-        conn = get_db_connection()
-        user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-
-        if not user:
-            return
-
-        # 1. Get total spots booked this month
-        spots_booked = conn.execute("""
-            SELECT COUNT(*) FROM reserved_parking_spots
-            WHERE user_id = ? AND strftime('%Y-%m', reserved_at) = strftime('%Y-%m', 'now', 'start of month')
-        """, (user_id,)).fetchone()[0]
-
-        # 2. Get most used parking lot
-        most_used_lot = conn.execute("""
-            SELECT pl.prime_location_name, COUNT(*) as count
-            FROM reserved_parking_spots rps
-            JOIN parking_spots ps ON rps.parking_spot_id = ps.id
-            JOIN parking_lots pl ON ps.parking_lot_id = pl.id
-            WHERE rps.user_id = ? AND strftime('%Y-%m', rps.reserved_at) = strftime('%Y-%m', 'now', 'start of month')
-            GROUP BY pl.id
-            ORDER BY count DESC
-            LIMIT 1
-        """, (user_id,)).fetchone()
-
-        # 3. Get total amount spent
-        amount_spent = conn.execute("""
-            SELECT SUM((strftime('%s', rps.leave_at) - strftime('%s', rps.reserved_at)) / 3600.0 * pl.price)
-            FROM reserved_parking_spots rps
-            JOIN parking_spots ps ON rps.parking_spot_id = ps.id
-            JOIN parking_lots pl ON ps.parking_lot_id = pl.id
-            WHERE rps.user_id = ? AND rps.leave_at IS NOT NULL
-            AND strftime('%Y-%m', rps.reserved_at) = strftime('%Y-%m', 'now', 'start of month')
-        """, (user_id,)).fetchone()[0]
-
-        conn.close()
-
-        report_data = {
-            "user_name": user['full_name'],
-            "spots_booked": spots_booked,
-            "most_used_lot": most_used_lot['prime_location_name'] if most_used_lot else "N/A",
-            "amount_spent": round(amount_spent, 2) if amount_spent else 0
-        }
-
-        # For this to work, you need a 'monthly_report.html' in a 'templates' folder
-        html_body = render_template('monthly_report.html', data=report_data)
-        msg = Message('Your Monthly Parking Report',
-                      sender='your-email@gmail.com',
-                      recipients=[user['username']])
-        msg.html = html_body
-        # mail.send(msg) # Uncomment when email is configured
-        print(f"Generated monthly report for {user['username']}")
-
-
-@celery.task
-def trigger_monthly_reports():
-    """
-    Triggers the monthly report generation for all users.
-    """
-    with app.app_context():
-        conn = get_db_connection()
-        users = conn.execute("SELECT id FROM users WHERE role = 'user'").fetchall()
-        conn.close()
-        for user in users:
-            send_monthly_report_email.delay(user['id'])
-
-
-@celery.task
-def generate_csv_export(user_email):
-    """
-    Generates a CSV of parking history for a user and emails it.
-    """
-    with app.app_context():
-        conn = get_db_connection()
-        user = conn.execute("SELECT id, full_name FROM users WHERE username = ?", (user_email,)).fetchone()
-        if not user:
-            return
-
-        history = conn.execute("""
-            SELECT
-                rps.id as booking_id,
-                ps.id as spot_id,
-                pl.id as lot_id,
-                pl.prime_location_name,
-                rps.vehicle_number,
-                rps.reserved_at,
-                rps.leave_at,
-                ((strftime('%s', rps.leave_at) - strftime('%s', rps.reserved_at)) / 3600.0 * pl.price) as cost
-            FROM reserved_parking_spots rps
-            JOIN parking_spots ps ON rps.parking_spot_id = ps.id
-            JOIN parking_lots pl ON ps.parking_lot_id = pl.id
-            WHERE rps.user_id = ? AND rps.leave_at IS NOT NULL
-            ORDER BY rps.reserved_at DESC
-        """, (user['id'],)).fetchall()
-        conn.close()
-
-        # Create CSV in memory
-        from io import StringIO
-        si = StringIO()
-        cw = csv.writer(si)
-        # Write headers
-        cw.writerow(['Booking ID', 'Spot ID', 'Lot ID', 'Location', 'Vehicle Number', 'Reserved At', 'Left At', 'Cost'])
-        # Write data
-        cw.writerows(history)
-
-        # Email the CSV
-        msg = Message('Your Parking History Export',
-                      sender='your-email@gmail.com',
-                      recipients=[user_email])
-        msg.body = "Here is your parking history export."
-        msg.attach("parking_history.csv", "text/csv", si.getvalue())
-        # mail.send(msg) # Uncomment when email is configured
-        print(f"CSV export generated and sent to {user_email}")
-
-
-# --- Celery Beat Schedule ---
-@celery.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    # Daily reminder job at 7 PM
-    sender.add_periodic_task(
-        crontab(hour=19, minute=0),
-        send_daily_reminders.s(),
-    )
-    # Monthly report job on the 1st of the month at 8 AM
-    sender.add_periodic_task(
-        crontab(day_of_month=1, hour=8, minute=0),
-        trigger_monthly_reports.s(),
-    )
-
+def invalidate_parking_cache(lot_id=None):
+    """Invalidates the cache for parking-related data."""
+    redis_client.delete('admin_dashboard_data')
+    redis_client.delete('user_dashboard_data')
+    if lot_id:
+        redis_client.delete(f'parking_lot_{lot_id}')
 
 class Register(Resource):
     def post(self):
@@ -264,37 +95,41 @@ class Login(Resource):
 # Protect endpoints with @jwt_required()
 class admin(Resource):
     @jwt_required()
-    @cache.cached(timeout=60)
     def get(self):
-            try:
-                result = {}
-                with sqlite3.connect(DB) as conn:
-                    cur = conn.cursor()
-                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode, parking_lots.price FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
-                    a = cur.fetchall()
-                    
+        cached_data = redis_client.get('admin_dashboard_data')
+        if cached_data:
+            return json.loads(cached_data)
+        try:
+            result = {}
+            with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode, parking_lots.price FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
+                a = cur.fetchall()
+                
 
-                    for row in a:
-                        lot_id, maxcapacity, occupied, spot_id, address, pincode, price = row
-                        if lot_id not in result:
-                            result[lot_id] = {
-                            'id': lot_id,
-                            'maxcapacity': maxcapacity,
-                            'spotdetail': [],
-                            'occupied': 0,
-                            'address': address,
-                            'pincode': pincode,
-                            'price': price
-                        }
-                        if occupied:
-                            result[lot_id]['occupied'] += 1  
-                        result[lot_id]['spotdetail'].append({'id': spot_id, 'occupied': occupied})
-                output = list(result.values())
-                return {'message': 'admin dashboard', 'data': output}, 200
-                
-            except sqlite3.Error as e:
-                return {'error': str(e)}, 500
-                
+                for row in a:
+                    lot_id, maxcapacity, occupied, spot_id, address, pincode, price = row
+                    if lot_id not in result:
+                        result[lot_id] = {
+                        'id': lot_id,
+                        'maxcapacity': maxcapacity,
+                        'spotdetail': [],
+                        'occupied': 0,
+                        'address': address,
+                        'pincode': pincode,
+                        'price': price
+                    }
+                    if occupied:
+                        result[lot_id]['occupied'] += 1  
+                    result[lot_id]['spotdetail'].append({'id': spot_id, 'occupied': occupied})
+            output = list(result.values())
+            response = {'message': 'admin dashboard', 'data': output}
+            redis_client.setex('admin_dashboard_data', 3600, json.dumps(response)) # Cache for 1 hour
+            return response, 200
+            
+        except sqlite3.Error as e:
+            return {'error': str(e)}, 500
+            
 
 class create(Resource):
     @jwt_required()
@@ -317,6 +152,7 @@ class create(Resource):
                 for i in range(maxspots):
                     cur.execute('INSERT INTO parking_spots(parking_lot_id) VALUES(?)', (a[0],))
                 conn.commit()
+            invalidate_parking_cache()
             return {'message': 'parking lot created'}, 201
         except sqlite3.Error as e:
             return {'error': str(e)}, 500
@@ -330,6 +166,7 @@ class delete(Resource):
                 cur.execute('DELETE FROM parking_spots WHERE parking_lot_id=?', (lot_id,))
                 cur.execute('DELETE FROM parking_lots WHERE id=?', (lot_id,))
                 conn.commit()
+            invalidate_parking_cache(lot_id)
             return {'message': 'parking lot deleted'}, 200
         except sqlite3.Error as e:
             return {'error': str(e)}, 500
@@ -337,6 +174,9 @@ class delete(Resource):
 class edit(Resource):
     @jwt_required()
     def get(self, lot_id):
+        cached_lot = redis_client.get(f'parking_lot_{lot_id}')
+        if cached_lot:
+            return json.loads(cached_lot)
         try:
             with sqlite3.connect(DB) as conn:
                 cur = conn.cursor()
@@ -345,7 +185,9 @@ class edit(Resource):
                 print(lot)
                 if not lot:
                     return {'error': 'parking lot not found'}, 404
-                return {'id': lot[0], 'prime_location_name': lot[1], 'address': lot[3], 'pincode': lot[4], 'price': lot[2], 'number_of_spots': lot[5]}, 200
+                response = {'id': lot[0], 'prime_location_name': lot[1], 'address': lot[3], 'pincode': lot[4], 'price': lot[2], 'number_of_spots': lot[5]}
+                redis_client.setex(f'parking_lot_{lot_id}', 3600, json.dumps(response)) # Cache for 1 hour
+                return response, 200
         except sqlite3.Error as e:
             return {'error': str(e)}, 500
     @jwt_required()
@@ -394,7 +236,7 @@ class edit(Resource):
                     WHERE id=?''',
                     (prime_location_name, address, pincode, price, number_of_spots, lot_id))
                 conn.commit()
-
+            invalidate_parking_cache(lot_id)
             return {'message': 'Parking lot updated'}, 200
         except Exception as e:
             print("Unhandled Error:", e)
@@ -443,6 +285,7 @@ class spotdetail(Resource):
                 count = cur.fetchone()
                 cur.execute('UPDATE parking_lots SET number_of_spots=? WHERE id=?', (count[0], lot[0])) 
                 conn.commit()
+            invalidate_parking_cache()
             return {'message': 'Parking spot deleted'}, 200
         except sqlite3.Error as e:
             return {'error': str(e)}, 500   
@@ -488,34 +331,38 @@ class OccupiedSpots(Resource):
             return {'error': str(e)}, 500
 class notoccupied(Resource):
     @jwt_required()
-    @cache.cached(timeout=30)
     def get(self):
-            try:
-                result = {}
-                with sqlite3.connect(DB) as conn:
-                    cur = conn.cursor()
-                    cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
-                    a = cur.fetchall()
-                    
+        cached_data = redis_client.get('user_dashboard_data')
+        if cached_data:
+            return json.loads(cached_data)
+        try:
+            result = {}
+            with sqlite3.connect(DB) as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT parking_lots.id, parking_lots.number_of_spots, parking_spots.is_occupied, parking_spots.id, parking_lots.address, parking_lots.pincode FROM parking_lots INNER JOIN parking_spots ON parking_lots.id = parking_spots.parking_lot_id')
+                a = cur.fetchall()
+                
 
-                    for row in a:
-                        lot_id, maxcapacity, occupied, spot_id, address, pincode = row
-                        if lot_id not in result:
-                            result[lot_id] = {
-                            'id': lot_id,
-                            'spotid': 0,
-                            'available': maxcapacity,
-                            'address': address,
-                            'pincode': pincode,
-                        }
-                        if occupied:
-                            result[lot_id]['available'] -= 1
-                        else:
-                            result[lot_id]['spotid'] = spot_id
-                output = list(result.values())
-                return {'message': 'user dashboard', 'data': output}, 200
-            except sqlite3.Error as e:
-                return {'error': str(e)}, 500
+                for row in a:
+                    lot_id, maxcapacity, occupied, spot_id, address, pincode = row
+                    if lot_id not in result:
+                        result[lot_id] = {
+                        'id': lot_id,
+                        'spotid': 0,
+                        'available': maxcapacity,
+                        'address': address,
+                        'pincode': pincode,
+                    }
+                    if occupied:
+                        result[lot_id]['available'] -= 1
+                    else:
+                        result[lot_id]['spotid'] = spot_id
+            output = list(result.values())
+            response = {'message': 'user dashboard', 'data': output}
+            redis_client.setex('user_dashboard_data', 3600, json.dumps(response)) # Cache for 1 hour
+            return response, 200
+        except sqlite3.Error as e:
+            return {'error': str(e)}, 500
     
 
 class userbook(Resource):
@@ -543,8 +390,7 @@ class userbook(Resource):
                 cur.execute('INSERT INTO reserved_parking_spots(parking_spot_id, user_id, vehicle_number, reserved_at) VALUES(?,?,?,?)', (spotid, userid, vehicle_number, now))
                 cur.execute('UPDATE parking_spots SET is_occupied=1 WHERE id=?', (spotid,))
                 conn.commit()
-                cache.delete_memoized(admin.get)
-                cache.delete_memoized(notoccupied.get)
+                invalidate_parking_cache()
                 return {'message': 'Spot booked successfully', 'email': email}, 200
         except sqlite3.Error as e:
                 return {'error': str(e)}, 500  
@@ -590,6 +436,7 @@ class release(Resource):
                 cur.execute('UPDATE reserved_parking_spots SET leave_at=strftime("%Y-%m-%d %H:%M:%S", "now", "localtime") WHERE parking_spot_id=?', (spotid,))
                 cur.execute('UPDATE parking_spots SET is_occupied=0 WHERE id=?', (spotid,))
                 conn.commit()
+                invalidate_parking_cache()
                 return {'message': 'Parking spot released successfully', 'username': username[0]}, 200
         except sqlite3.Error as e:
             return {'error': str(e)}, 500
@@ -597,7 +444,6 @@ class release(Resource):
 
 class Adsummary(Resource):
     @jwt_required()
-    @cache.cached(timeout=3600)
     def get(self):
         revenue_data = {
         'user_detail': {},
@@ -676,7 +522,6 @@ class Adsummary(Resource):
 
 class usersumarry(Resource):
     @jwt_required()
-    @cache.cached(timeout=3600, key_prefix='user_summary_%s')
     def get(self,email):
         user_revenue_data = defaultdict(lambda: defaultdict(dict))
         try:
@@ -752,13 +597,41 @@ class aduser(Resource):
             print(f"An error occurred while fetching users: {e}")
             return jsonify({"error": "An internal server error occurred."}), 500
 
-class ExportCSV(Resource):
-    @jwt_required()
-    def post(self):
-        user_identity = get_jwt_identity()
-        generate_csv_export.delay(user_identity)
-        return {'message': 'Your CSV export is being generated. You will be notified when it is complete.'}, 202
 
+class GetUserByEmail(Resource):
+    @jwt_required()
+    def get(self, email):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT username, full_name, address, pincode FROM users WHERE username = ?", (email,))
+            user = cur.fetchone()
+            conn.close()
+            if user:
+                return dict(zip(["username", "full_name", "address", "pincode"], user)), 200
+            print(dict(zip(["username", "full_name", "address", "pincode"], user)))
+            return {"error": "User not found"}, 404
+        except Exception as e:
+            return {"error": str(e)}, 500
+        
+class UpdateUser(Resource):
+    @jwt_required()
+    def put(self, email):
+        data = request.get_json()
+        full_name = data.get('full_name')
+        address = data.get('address')
+        pincode = data.get('pincode')
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET full_name = ?, address = ?, pincode = ? WHERE username = ?",
+                        (full_name, address, pincode, email))
+            conn.commit()
+            conn.close()
+            return {"message": "User updated successfully"}, 200
+        except Exception as e:
+            return {"error": str(e)}, 500
 
 
 # Add this resource to your API
@@ -776,7 +649,12 @@ api.add_resource(Adsummary, '/api/admin/summary')
 api.add_resource(spotdetail, '/admin/spot/<int:lot_id>')
 api.add_resource(usersumarry, '/api/user/summary/<string:email>')
 api.add_resource(aduser, '/api/admin/users')
-api.add_resource(ExportCSV, '/api/export/csv')
+api.add_resource(PincodeSubmit, '/submit-pincode')
+api.add_resource(UserCSVReport, '/api/user/report/<string:email>/<int:user_id>')
+api.add_resource(UserIdLookup, '/api/user/lookup/<string:email>')
+api.add_resource(GetUserByEmail, '/api/user/profile/<string:email>')
+api.add_resource(UpdateUser, '/api/user/update/<string:email>')
+
 
 if __name__ == '__main__':
     app.run(debug=True)

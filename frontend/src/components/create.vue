@@ -74,6 +74,21 @@ export default {
         if (response.ok) {
           this.error = ''
           alert('Entry added successfully.')
+          try {
+        const res = await fetch("http://localhost:5000/submit-pincode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json",
+            'Authorization': 'Bearer ' + token
+           },
+          body: JSON.stringify({ pinCode: this.form.pinCode })
+        });
+
+        const result = await res.json();
+        alert(result.message);
+      } catch (err) {
+        console.error(err);
+        alert("Something went wrong.");
+      }
           this.$router.push('/admin')
         } else {
           this.error = data.error || 'Registration failed.'
@@ -81,6 +96,7 @@ export default {
       } catch (err) {
         this.error = 'Server error. Please try again later.'
       }
+      
       
     },
     resetForm() {

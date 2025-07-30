@@ -61,3 +61,4 @@ CREATE TABLE IF NOT EXISTS reserved_parking_spots (
     conn.commit()
     conn.close()
 
+
